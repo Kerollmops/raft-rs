@@ -25,7 +25,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use eraftpb::HardState;
+use internals::HardState;
 use hashbrown::HashMap;
 
 use progress::Progress;

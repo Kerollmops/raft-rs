@@ -33,7 +33,7 @@
 
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use eraftpb::{ConfState, Entry, HardState, Snapshot};
+use internals::{ConfState, Entry, HardState, Snapshot};
 
 use errors::{Error, Result, StorageError};
 use util;
@@ -320,7 +320,7 @@ impl Storage for MemStorage {
 
 #[cfg(test)]
 mod test {
-    use eraftpb::{ConfState, Entry, Snapshot};
+    use internals::{ConfState, Entry, Snapshot};
     use protobuf;
 
     use errors::{Error as RaftError, StorageError};

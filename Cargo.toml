@@ -16,12 +16,13 @@ default = []
 failpoint = ["fail"]
 
 [dependencies]
+fail = { version = "0.2", optional = true }
+hashbrown = "0.1"
 log = ">0.2"
-protobuf = "2.0.4"
 quick-error = "1.2.2"
 rand = "0.5.4"
-hashbrown = "0.1"
-fail = { version = "0.2", optional = true }
+serde = "1.0"
+serde_derive = "1.0"
 
 [dev-dependencies]
 env_logger = "0.5"

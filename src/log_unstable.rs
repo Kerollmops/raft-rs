@@ -27,7 +27,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use eraftpb::{Entry, Snapshot};
+use internals::{Entry, Snapshot};
 
 /// The unstable.entries[i] has raft log position i+unstable.offset.
 /// Note that unstable.offset may be less than the highest log
@@ -183,7 +183,7 @@ impl Unstable {
 
 #[cfg(test)]
 mod test {
-    use eraftpb::{Entry, Snapshot, SnapshotMetadata};
+    use internals::{Entry, Snapshot, SnapshotMetadata};
     use log_unstable::Unstable;
     use setup_for_test;
 

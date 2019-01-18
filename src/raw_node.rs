@@ -32,7 +32,7 @@
 
 use std::mem;
 
-use eraftpb::{
+use internals::{
     ConfChange, ConfChangeType, ConfState, Entry, EntryType, HardState, Message, MessageType,
     Snapshot,
 };

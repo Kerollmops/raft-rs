@@ -27,7 +27,7 @@
 
 use std::cmp;
 
-use eraftpb::{Entry, Snapshot};
+use internals::{Entry, Snapshot};
 
 use errors::{Error, Result, StorageError};
 use log_unstable::Unstable;
@@ -487,7 +487,7 @@ impl<T: Storage> RaftLog<T> {
 mod test {
     use std::panic::{self, AssertUnwindSafe};
 
-    use eraftpb;
+    use internals;
     use errors::{Error, StorageError};
     use protobuf;
     use raft_log::{self, RaftLog};
@@ -498,18 +498,18 @@ mod test {
         RaftLog::new(s, String::from(""))
     }
 
-    fn new_entry(index: u64, term: u64) -> eraftpb::Entry {
-        let mut e = eraftpb::Entry::new();
+    fn new_entry(index: u64, term: u64) -> internals::Entry {
+        let mut e = internals::Entry::new();
         e.set_term(term);
         e.set_index(index);
         e
     }
 
-    fn new_snapshot(meta_index: u64, meta_term: u64) -> eraftpb::Snapshot {
-        let mut meta = eraftpb::SnapshotMetadata::new();
+    fn new_snapshot(meta_index: u64, meta_term: u64) -> internals::Snapshot {
+        let mut meta = internals::SnapshotMetadata::new();
         meta.set_index(meta_index);
         meta.set_term(meta_term);
-        let mut snapshot = eraftpb::Snapshot::new();
+        let mut snapshot = internals::Snapshot::new();
         snapshot.set_metadata(meta);
         snapshot
     }

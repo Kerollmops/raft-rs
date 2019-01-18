@@ -27,7 +27,7 @@
 
 use std::cmp;
 
-use eraftpb::{Entry, EntryType, HardState, Message, MessageType, Snapshot};
+use internals::{Entry, EntryType, HardState, Message, MessageType, Snapshot};
 use hashbrown::{HashMap, HashSet};
 use protobuf::RepeatedField;
 use rand::{self, Rng};
