@@ -25,14 +25,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::cmp;
+use std::{cmp, u64};
 
 use internals::{Entry, Snapshot};
+use util;
 
 use errors::{Error, Result, StorageError};
 use log_unstable::Unstable;
 use storage::Storage;
-use util;
 
 pub use util::NO_LIMIT;
 
@@ -181,17 +181,17 @@ impl<T: Storage> RaftLog<T> {
     /// The index of the given entries MUST be continuously increasing.
     pub fn find_conflict(&self, ents: &[Entry]) -> u64 {
         for e in ents {
-            if !self.match_term(e.get_index(), e.get_term()) {
-                if e.get_index() <= self.last_index() {
+            if !self.match_term(e.index, e.term) {
+                if e.index <= self.last_index() {
                     info!(
                         "{} found conflict at index {}, [existing term:{}, conflicting term:{}]",
                         self.tag,
-                        e.get_index(),
-                        self.term(e.get_index()).unwrap_or(0),
-                        e.get_term()
+                        e.index,
+                        self.term(e.index).unwrap_or(0),
+                        e.term
                     );
                 }
-                return e.get_index();
+                return e.index;
             }
         }
         0
@@ -299,7 +299,7 @@ impl<T: Storage> RaftLog<T> {
             return self.last_index();
         }
 
-        let after = ents[0].get_index() - 1;
+        let after = ents[0].index - 1;
         if after < self.committed {
             panic!(
                 "{} after {} is out of range [committed {}]",
@@ -475,10 +475,10 @@ impl<T: Storage> RaftLog<T> {
             "{} log [{}] starts to restore snapshot [index: {}, term: {}]",
             self.tag,
             self.to_string(),
-            snapshot.get_metadata().get_index(),
-            snapshot.get_metadata().get_term()
+            snapshot.metadata.index,
+            snapshot.metadata.term
         );
-        self.committed = snapshot.get_metadata().get_index();
+        self.committed = snapshot.metadata.index;
         self.unstable.restore(snapshot);
     }
 }
@@ -489,7 +489,6 @@ mod test {
 
     use internals;
     use errors::{Error, StorageError};
-    use protobuf;
     use raft_log::{self, RaftLog};
     use setup_for_test;
     use storage::MemStorage;
@@ -500,17 +499,17 @@ mod test {
 
     fn new_entry(index: u64, term: u64) -> internals::Entry {
         let mut e = internals::Entry::new();
-        e.set_term(term);
-        e.set_index(index);
+        e.term = term;
+        e.index = index;
         e
     }
 
     fn new_snapshot(meta_index: u64, meta_term: u64) -> internals::Snapshot {
         let mut meta = internals::SnapshotMetadata::new();
-        meta.set_index(meta_index);
-        meta.set_term(meta_term);
+        meta.index = meta_index;
+        meta.term = meta_term;
         let mut snapshot = internals::Snapshot::new();
-        snapshot.set_metadata(meta);
+        snapshot.metadata = meta;
         snapshot
     }
 
@@ -683,7 +682,7 @@ mod test {
         {
             let unstable_ents = raft_log.unstable_entries().expect("should have content.");
             assert_eq!(250, unstable_ents.len());
-            assert_eq!(751, unstable_ents[0].get_index());
+            assert_eq!(751, unstable_ents[0].index);
         }
 
         let mut prev = raft_log.last_index();
@@ -887,12 +886,12 @@ mod test {
             let ents = raft_log.unstable_entries().unwrap_or(&[]).to_vec();
             let l = ents.len();
             if l > 0 {
-                raft_log.stable_to(ents[l - 1].get_index(), ents[l - i].get_term());
+                raft_log.stable_to(ents[l - 1].index, ents[l - i].term);
             }
             if &ents != wents {
                 panic!("#{}: unstableEnts = {:?}, want {:?}", i, ents, wents);
             }
-            let w = previous_ents[previous_ents.len() - 1].get_index() + 1;
+            let w = previous_ents[previous_ents.len() - 1].index + 1;
             let g = raft_log.unstable.offset;
             if g != w {
                 panic!("#{}: unstable = {}, want {}", i, g, w);
@@ -955,7 +954,7 @@ mod test {
         let (offset, num) = (100u64, 100u64);
         let (last, half) = (offset + num, offset + num / 2);
         let halfe = new_entry(half, half);
-        let halfe_size = u64::from(protobuf::Message::compute_size(&halfe));
+        let halfe_size = bincode::serialized_size(&halfe).unwrap();
 
         let store = MemStorage::new();
         store

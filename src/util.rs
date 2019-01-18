@@ -15,8 +15,7 @@
 // limitations under the License.
 
 use std::u64;
-
-use protobuf::Message;
+use serde::Serialize;
 
 /// A number to represent that there is no limit.
 pub const NO_LIMIT: u64 = u64::MAX;
@@ -31,7 +30,7 @@ pub const NO_LIMIT: u64 = u64::MAX;
 ///
 /// let template = {
 ///     let mut entry = Entry::new();
-///     entry.set_data("*".repeat(100).into_bytes());
+///     entry.data = "*".repeat(100).into_bytes();
 ///     entry
 /// };
 ///
@@ -46,9 +45,9 @@ pub const NO_LIMIT: u64 = u64::MAX;
 ///
 /// assert_eq!(entries.len(), 5);
 /// limit_size(&mut entries, 220);
-/// assert_eq!(entries.len(), 2);
+/// assert_eq!(entries.len(), 1);
 /// ```
-pub fn limit_size<T: Message + Clone>(entries: &mut Vec<T>, max: u64) {
+pub fn limit_size<T: Serialize + Clone>(entries: &mut Vec<T>, max: u64) {
     if max == NO_LIMIT || entries.len() <= 1 {
         return;
     }
@@ -58,10 +57,10 @@ pub fn limit_size<T: Message + Clone>(entries: &mut Vec<T>, max: u64) {
         .iter()
         .take_while(|&e| {
             if size == 0 {
-                size += u64::from(Message::compute_size(e));
+                size += bincode::serialized_size(e).unwrap();
                 true
             } else {
-                size += u64::from(Message::compute_size(e));
+                size += bincode::serialized_size(e).unwrap();
                 size <= max
             }
         })

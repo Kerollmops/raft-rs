@@ -26,8 +26,7 @@
 // limitations under the License.
 
 use env_logger;
-use protobuf::RepeatedField;
-use raft::eraftpb::*;
+use raft::internals::*;
 use raft::storage::MemStorage;
 use raft::*;
 use rand;
@@ -162,9 +161,9 @@ pub fn new_test_raft_with_config(config: &Config, storage: MemStorage) -> Interf
 
 pub fn hard_state(t: u64, c: u64, v: u64) -> HardState {
     let mut hs = HardState::new();
-    hs.set_term(t);
-    hs.set_commit(c);
-    hs.set_vote(v);
+    hs.term = t;
+    hs.commit = c;
+    hs.vote = v;
     hs
 }
 
@@ -172,11 +171,11 @@ pub const SOME_DATA: Option<&'static str> = Some("somedata");
 
 pub fn new_message_with_entries(from: u64, to: u64, t: MessageType, ents: Vec<Entry>) -> Message {
     let mut m = Message::new();
-    m.set_from(from);
-    m.set_to(to);
-    m.set_msg_type(t);
+    m.from = from;
+    m.to = to;
+    m.msg_type = t;
     if !ents.is_empty() {
-        m.set_entries(RepeatedField::from_vec(ents));
+        m.entries = ents;
     }
     m
 }
@@ -188,17 +187,17 @@ pub fn new_message(from: u64, to: u64, t: MessageType, n: usize) -> Message {
         for _ in 0..n {
             ents.push(new_entry(0, 0, SOME_DATA));
         }
-        m.set_entries(RepeatedField::from_vec(ents));
+        m.entries = ents;
     }
     m
 }
 
 pub fn new_entry(term: u64, index: u64, data: Option<&str>) -> Entry {
     let mut e = Entry::new();
-    e.set_index(index);
-    e.set_term(term);
+    e.index = index;
+    e.term = term;
     if let Some(d) = data {
-        e.set_data(d.as_bytes().to_vec());
+        e.data = d.as_bytes().to_vec();
     }
     e
 }
@@ -209,9 +208,9 @@ pub fn empty_entry(term: u64, index: u64) -> Entry {
 
 pub fn new_snapshot(index: u64, term: u64, nodes: Vec<u64>) -> Snapshot {
     let mut s = Snapshot::new();
-    s.mut_metadata().set_index(index);
-    s.mut_metadata().set_term(term);
-    s.mut_metadata().mut_conf_state().set_nodes(nodes);
+    s.metadata.index = index;
+    s.metadata.term = term;
+    s.metadata.conf_state.nodes = nodes;
     s
 }
 
@@ -284,19 +283,19 @@ impl Network {
             .filter(|m| {
                 if self
                     .ignorem
-                    .get(&m.get_msg_type())
+                    .get(&m.msg_type)
                     .cloned()
                     .unwrap_or(false)
                 {
                     return false;
                 }
                 // hups never go over the network, so don't drop them but panic
-                assert_ne!(m.get_msg_type(), MessageType::MsgHup, "unexpected msgHup");
+                assert_ne!(m.msg_type, MessageType::MsgHup, "unexpected msgHup");
                 let perc = self
                     .dropm
                     .get(&Connem {
-                        from: m.get_from(),
-                        to: m.get_to(),
+                        from: m.from,
+                        to: m.to,
                     })
                     .cloned()
                     .unwrap_or(0f64);
@@ -311,7 +310,7 @@ impl Network {
             let mut new_msgs = vec![];
             for m in msgs.drain(..) {
                 let resp = {
-                    let p = self.peers.get_mut(&m.get_to()).unwrap();
+                    let p = self.peers.get_mut(&m.to).unwrap();
                     let _ = p.step(m);
                     p.read_messages()
                 };

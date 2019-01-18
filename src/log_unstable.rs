@@ -64,7 +64,7 @@ impl Unstable {
     pub fn maybe_first_index(&self) -> Option<u64> {
         self.snapshot
             .as_ref()
-            .map(|snap| snap.get_metadata().get_index() + 1)
+            .map(|snap| snap.metadata.index + 1)
     }
 
     /// Returns the last index if it has at least one unstable entry or snapshot.
@@ -73,7 +73,7 @@ impl Unstable {
             0 => self
                 .snapshot
                 .as_ref()
-                .map(|snap| snap.get_metadata().get_index()),
+                .map(|snap| snap.metadata.index),
             len => Some(self.offset + len as u64 - 1),
         }
     }
@@ -82,9 +82,9 @@ impl Unstable {
     pub fn maybe_term(&self, idx: u64) -> Option<u64> {
         if idx < self.offset {
             let snapshot = self.snapshot.as_ref()?;
-            let meta = snapshot.get_metadata();
-            if idx == meta.get_index() {
-                Some(meta.get_term())
+            let meta = &snapshot.metadata;
+            if idx == meta.index {
+                Some(meta.term)
             } else {
                 None
             }
@@ -93,7 +93,7 @@ impl Unstable {
                 if idx > last {
                     return None;
                 }
-                Some(self.entries[(idx - self.offset) as usize].get_term())
+                Some(self.entries[(idx - self.offset) as usize].term)
             })
         }
     }
@@ -118,7 +118,7 @@ impl Unstable {
         if self.snapshot.is_none() {
             return;
         }
-        if idx == self.snapshot.as_ref().unwrap().get_metadata().get_index() {
+        if idx == self.snapshot.as_ref().unwrap().metadata.index {
             self.snapshot = None;
         }
     }
@@ -126,13 +126,13 @@ impl Unstable {
     /// From a given snapshot, restores the snapshot to self, but doesn't unpack.
     pub fn restore(&mut self, snap: Snapshot) {
         self.entries.clear();
-        self.offset = snap.get_metadata().get_index() + 1;
+        self.offset = snap.metadata.index + 1;
         self.snapshot = Some(snap);
     }
 
     /// Append entries to unstable, truncate local block first if overlapped.
     pub fn truncate_and_append(&mut self, ents: &[Entry]) {
-        let after = ents[0].get_index();
+        let after = ents[0].index;
         if after == self.offset + self.entries.len() as u64 {
             // after is the next index in the self.entries, append directly
             self.entries.extend_from_slice(ents);
@@ -189,17 +189,17 @@ mod test {
 
     fn new_entry(index: u64, term: u64) -> Entry {
         let mut e = Entry::new();
-        e.set_term(term);
-        e.set_index(index);
+        e.term = term;
+        e.index = index;
         e
     }
 
     fn new_snapshot(index: u64, term: u64) -> Snapshot {
         let mut snap = Snapshot::new();
         let mut meta = SnapshotMetadata::new();
-        meta.set_index(index);
-        meta.set_term(term);
-        snap.set_metadata(meta);
+        meta.index = index;
+        meta.term = term;
+        snap.metadata = meta;
         snap
     }
 
@@ -334,7 +334,7 @@ mod test {
         let s = new_snapshot(6, 2);
         u.restore(s.clone());
 
-        assert_eq!(u.offset, s.get_metadata().get_index() + 1);
+        assert_eq!(u.offset, s.metadata.index + 1);
         assert!(u.entries.is_empty());
         assert_eq!(u.snapshot.unwrap(), s);
     }

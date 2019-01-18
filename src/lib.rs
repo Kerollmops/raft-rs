@@ -112,7 +112,7 @@ You can call the `step` function when you receive the Raft messages from other n
 Here is a simple example to use `propose` and `step`:
 
 ```rust
-# use raft::{Config, storage::MemStorage, raw_node::RawNode, eraftpb::Message};
+# use raft::{Config, storage::MemStorage, raw_node::RawNode, internals::Message};
 # use std::{
 #     sync::mpsc::{channel, RecvTimeoutError},
 #     time::{Instant, Duration},
@@ -261,7 +261,7 @@ For more information, check out an [example](examples/single_mem_node/main.rs#L1
 */
 
 #![cfg_attr(not(feature = "cargo-clippy"), allow(unknown_lints))]
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 #[cfg(feature = "failpoint")]
 #[macro_use]

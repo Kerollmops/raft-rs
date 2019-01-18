@@ -25,8 +25,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use protobuf::RepeatedField;
-use raft::eraftpb::*;
+use raft::internals::*;
 use raft::storage::MemStorage;
 use raft::*;
 use test_util::*;
@@ -37,9 +36,9 @@ fn commit_noop_entry(r: &mut Interface, s: &MemStorage) {
     // simulate the response of MsgAppend
     let msgs = r.read_messages();
     for m in msgs {
-        assert_eq!(m.get_msg_type(), MessageType::MsgAppend);
-        assert_eq!(m.get_entries().len(), 1);
-        assert!(m.get_entries()[0].get_data().is_empty());
+        assert_eq!(m.msg_type, MessageType::MsgAppend);
+        assert_eq!(m.entries.len(), 1);
+        assert!(m.entries[0].data.is_empty());
         r.step(accept_and_reply(&m)).expect("");
     }
     // ignore further messages to refresh followers' commit index
@@ -54,10 +53,10 @@ fn commit_noop_entry(r: &mut Interface, s: &MemStorage) {
 }
 
 fn accept_and_reply(m: &Message) -> Message {
-    assert_eq!(m.get_msg_type(), MessageType::MsgAppend);
-    let mut reply = new_message(m.get_to(), m.get_from(), MessageType::MsgAppendResponse, 0);
-    reply.set_term(m.get_term());
-    reply.set_index(m.get_index() + m.get_entries().len() as u64);
+    assert_eq!(m.msg_type, MessageType::MsgAppend);
+    let mut reply = new_message(m.to, m.from, MessageType::MsgAppendResponse, 0);
+    reply.term = m.term;
+    reply.index = m.index + m.entries.len() as u64;
     reply
 }
 
@@ -97,7 +96,7 @@ fn test_update_term_from_message(state: StateRole) {
     }
 
     let mut m = new_message(0, 0, MessageType::MsgAppend, 0);
-    m.set_term(2);
+    m.term = 2;
     r.step(m).expect("");
 
     assert_eq!(r.term, 2);
@@ -138,8 +137,8 @@ fn test_leader_bcast_beat() {
 
     let new_message_ext = |f, to| {
         let mut m = new_message(f, to, MessageType::MsgHeartbeat, 0);
-        m.set_term(1);
-        m.set_commit(0);
+        m.term = 1;
+        m.commit = 0;
         m
     };
 
@@ -190,9 +189,9 @@ fn test_nonleader_start_election(state: StateRole) {
     msgs.sort_by_key(|m| format!("{:?}", m));
     let new_message_ext = |f, to| {
         let mut m = new_message(f, to, MessageType::MsgRequestVote, 0);
-        m.set_term(2);
-        m.set_log_term(0);
-        m.set_index(0);
+        m.term = 2;
+        m.log_term = 0;
+        m.index = 0;
         m
     };
     let expect_msgs = vec![new_message_ext(1, 2), new_message_ext(1, 3)];
@@ -245,8 +244,8 @@ fn test_leader_election_in_one_round_rpc() {
         r.step(new_message(1, 1, MessageType::MsgHup, 0)).expect("");
         for (id, vote) in votes {
             let mut m = new_message(id, 1, MessageType::MsgRequestVoteResponse, 0);
-            m.set_term(r.term);
-            m.set_reject(!vote);
+            m.term = r.term;
+            m.reject = !vote;
             r.step(m).expect("");
         }
 
@@ -279,13 +278,13 @@ fn test_follower_vote() {
         r.load_state(&hard_state(1, 0, vote));
 
         let mut m = new_message(nvote, 1, MessageType::MsgRequestVote, 0);
-        m.set_term(1);
+        m.term = 1;
         r.step(m).expect("");
 
         let msgs = r.read_messages();
         let mut m = new_message(1, nvote, MessageType::MsgRequestVoteResponse, 0);
-        m.set_term(1);
-        m.set_reject(wreject);
+        m.term = 1;
+        m.reject = wreject;
         let expect_msgs = vec![m];
         if msgs != expect_msgs {
             panic!("#{}: msgs = {:?}, want {:?}", i, msgs, expect_msgs);
@@ -303,7 +302,7 @@ fn test_candidate_fallback() {
     setup_for_test();
     let new_message_ext = |f, to, term| {
         let mut m = new_message(f, to, MessageType::MsgAppend, 0);
-        m.set_term(term);
+        m.term = term;
         m
     };
     let mut tests = vec![new_message_ext(2, 1, 1), new_message_ext(2, 1, 2)];
@@ -312,7 +311,7 @@ fn test_candidate_fallback() {
         r.step(new_message(1, 1, MessageType::MsgHup, 0)).expect("");
         assert_eq!(r.state, StateRole::Candidate);
 
-        let term = m.get_term();
+        let term = m.term;
         r.step(m).expect("");
 
         if r.state != StateRole::Follower {
@@ -451,11 +450,11 @@ fn test_leader_start_replication() {
     let wents = vec![new_entry(1, li + 1, SOME_DATA)];
     let new_message_ext = |f, to, ents| {
         let mut m = new_message(f, to, MessageType::MsgAppend, 0);
-        m.set_term(1);
-        m.set_index(li);
-        m.set_log_term(1);
-        m.set_commit(li);
-        m.set_entries(RepeatedField::from_vec(ents));
+        m.term = 1;
+        m.index = li;
+        m.log_term = 1;
+        m.commit = li;
+        m.entries = ents;
         m
     };
     let expect_msgs = vec![
@@ -495,9 +494,9 @@ fn test_leader_commit_entry() {
     let mut msgs = r.read_messages();
     msgs.sort_by_key(|m| format!("{:?}", m));
     for (i, m) in msgs.drain(..).enumerate() {
-        assert_eq!(i as u64 + 2, m.get_to());
-        assert_eq!(m.get_msg_type(), MessageType::MsgAppend);
-        assert_eq!(m.get_commit(), li + 1);
+        assert_eq!(i as u64 + 2, m.to);
+        assert_eq!(m.msg_type, MessageType::MsgAppend);
+        assert_eq!(m.commit, li + 1);
     }
 }
 
@@ -529,7 +528,7 @@ fn test_leader_acknowledge_commit() {
             .expect("");
 
         for m in r.read_messages() {
-            if acceptors.contains_key(&m.get_to()) && acceptors[&m.get_to()] {
+            if acceptors.contains_key(&m.to) && acceptors[&m.to] {
                 r.step(accept_and_reply(&m)).expect("");
             }
         }
@@ -619,9 +618,9 @@ fn test_follower_commit_entry() {
         r.become_follower(1, 2);
 
         let mut m = new_message(2, 1, MessageType::MsgAppend, 0);
-        m.set_term(1);
-        m.set_commit(commit);
-        m.set_entries(RepeatedField::from_vec(ents.clone()));
+        m.term = 1;
+        m.commit = commit;
+        m.entries = ents.clone();
         r.step(m).expect("");
 
         if r.raft_log.committed != commit {
@@ -650,22 +649,22 @@ fn test_follower_check_msg_append() {
     let mut tests = vec![
         // match with committed entries
         (0, 0, 1, false, 0),
-        (ents[0].get_term(), ents[0].get_index(), 1, false, 0),
+        (ents[0].term, ents[0].index, 1, false, 0),
         // match with uncommitted entries
-        (ents[1].get_term(), ents[1].get_index(), 2, false, 0),
+        (ents[1].term, ents[1].index, 2, false, 0),
         // unmatch with existing entry
         (
-            ents[0].get_term(),
-            ents[1].get_index(),
-            ents[1].get_index(),
+            ents[0].term,
+            ents[1].index,
+            ents[1].index,
             true,
             2,
         ),
         // unexisting entry
         (
-            ents[1].get_term() + 1,
-            ents[1].get_index() + 1,
-            ents[1].get_index() + 1,
+            ents[1].term + 1,
+            ents[1].index + 1,
+            ents[1].index + 1,
             true,
             2,
         ),
@@ -678,18 +677,18 @@ fn test_follower_check_msg_append() {
         r.become_follower(2, 2);
 
         let mut m = new_message(2, 1, MessageType::MsgAppend, 0);
-        m.set_term(2);
-        m.set_log_term(term);
-        m.set_index(index);
+        m.term = 2;
+        m.log_term = term;
+        m.index = index;
         r.step(m).expect("");
 
         let msgs = r.read_messages();
         let mut wm = new_message(1, 2, MessageType::MsgAppendResponse, 0);
-        wm.set_term(2);
-        wm.set_index(windex);
+        wm.term = 2;
+        wm.index = windex;
         if wreject {
-            wm.set_reject(wreject);
-            wm.set_reject_hint(wreject_hint);
+            wm.reject = wreject;
+            wm.reject_hint = wreject_hint;
         }
         let expect_msgs = vec![wm];
         if msgs != expect_msgs {
@@ -745,10 +744,10 @@ fn test_follower_append_entries() {
         r.become_follower(2, 2);
 
         let mut m = new_message(2, 1, MessageType::MsgAppend, 0);
-        m.set_term(2);
-        m.set_log_term(term);
-        m.set_index(index);
-        m.set_entries(RepeatedField::from_vec(ents));
+        m.term = 2;
+        m.log_term = term;
+        m.index = index;
+        m.entries = ents;
         r.step(m).expect("");
 
         let g = r.raft_log.all_entries();
@@ -879,11 +878,11 @@ fn test_leader_sync_follower_log() {
         // The election occurs in the term after the one we loaded with
         // lead.load_state above.
         let mut m = new_message(3, 1, MessageType::MsgRequestVoteResponse, 0);
-        m.set_term(term + 1);
+        m.term = term + 1;
         n.send(vec![m]);
 
         let mut m = new_message(1, 1, MessageType::MsgPropose, 0);
-        m.set_entries(RepeatedField::from_vec(vec![Entry::new()]));
+        m.entries = vec![Entry::new()];
         n.send(vec![m]);
         let lead_str = ltoa(&n.peers[&1].raft_log);
         let follower_str = ltoa(&n.peers[&2].raft_log);
@@ -909,10 +908,10 @@ fn test_vote_request() {
     for (j, (ents, wterm)) in tests.drain(..).enumerate() {
         let mut r = new_test_raft(1, vec![1, 2, 3], 10, 1, new_storage());
         let mut m = new_message(2, 1, MessageType::MsgAppend, 0);
-        m.set_term(wterm - 1);
-        m.set_log_term(0);
-        m.set_index(0);
-        m.set_entries(RepeatedField::from_vec(ents.clone()));
+        m.term = wterm - 1;
+        m.log_term = 0;
+        m.index = 0;
+        m.entries = ents.clone();
         r.step(m).expect("");
         r.read_messages();
 
@@ -926,32 +925,32 @@ fn test_vote_request() {
             panic!("#{}: msg count = {}, want 2", j, msgs.len());
         }
         for (i, m) in msgs.iter().enumerate() {
-            if m.get_msg_type() != MessageType::MsgRequestVote {
+            if m.msg_type != MessageType::MsgRequestVote {
                 panic!(
                     "#{}.{}: msg_type = {:?}, want {:?}",
                     j,
                     i,
-                    m.get_msg_type(),
+                    m.msg_type,
                     MessageType::MsgRequestVote
                 );
             }
-            if m.get_to() != i as u64 + 2 {
-                panic!("#{}.{}: to = {}, want {}", j, i, m.get_to(), i + 2);
+            if m.to != i as u64 + 2 {
+                panic!("#{}.{}: to = {}, want {}", j, i, m.to, i + 2);
             }
-            if m.get_term() != wterm {
-                panic!("#{}.{}: term = {}, want {}", j, i, m.get_term(), wterm);
+            if m.term != wterm {
+                panic!("#{}.{}: term = {}, want {}", j, i, m.term, wterm);
             }
-            let windex = ents.last().unwrap().get_index();
-            let wlogterm = ents.last().unwrap().get_term();
-            if m.get_index() != windex {
-                panic!("#{}.{}: index = {}, want {}", j, i, m.get_index(), windex);
+            let windex = ents.last().unwrap().index;
+            let wlogterm = ents.last().unwrap().term;
+            if m.index != windex {
+                panic!("#{}.{}: index = {}, want {}", j, i, m.index, windex);
             }
-            if m.get_log_term() != wlogterm {
+            if m.log_term != wlogterm {
                 panic!(
                     "#{}.{}: log_term = {}, want {}",
                     j,
                     i,
-                    m.get_log_term(),
+                    m.log_term,
                     wlogterm
                 );
             }
@@ -985,28 +984,28 @@ fn test_voter() {
         let mut r = new_test_raft(1, vec![1, 2], 10, 1, s);
 
         let mut m = new_message(2, 1, MessageType::MsgRequestVote, 0);
-        m.set_term(3);
-        m.set_log_term(log_term);
-        m.set_index(index);
+        m.term = 3;
+        m.log_term = log_term;
+        m.index = index;
         r.step(m).expect("");
 
         let msgs = r.read_messages();
         if msgs.len() != 1 {
             panic!("#{}: msg count = {}, want {}", i, msgs.len(), 1);
         }
-        if msgs[0].get_msg_type() != MessageType::MsgRequestVoteResponse {
+        if msgs[0].msg_type != MessageType::MsgRequestVoteResponse {
             panic!(
                 "#{}: msg_type = {:?}, want {:?}",
                 i,
-                msgs[0].get_msg_type(),
+                msgs[0].msg_type,
                 MessageType::MsgRequestVoteResponse
             );
         }
-        if msgs[0].get_reject() != wreject {
+        if msgs[0].reject != wreject {
             panic!(
                 "#{}: reject = {}, want {}",
                 i,
-                msgs[0].get_reject(),
+                msgs[0].reject,
                 wreject
             );
         }
@@ -1041,8 +1040,8 @@ fn test_leader_only_commits_log_from_current_term() {
             .expect("");
 
         let mut m = new_message(2, 1, MessageType::MsgAppendResponse, 0);
-        m.set_term(r.term);
-        m.set_index(index);
+        m.term = r.term;
+        m.index = index;
         r.step(m).expect("");
         if r.raft_log.committed != wcommit {
             panic!(

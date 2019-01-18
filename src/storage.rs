@@ -87,7 +87,7 @@ pub struct MemStorageCore {
     hard_state: HardState,
     snapshot: Snapshot,
     // TODO: maybe vec_deque
-    // entries[i] has raft log position i+snapshot.get_metadata().get_index()
+    // entries[i] has raft log position i+snapshot.metadata.index
     entries: Vec<Entry>,
 }
 
@@ -109,21 +109,21 @@ impl MemStorageCore {
     }
 
     fn inner_last_index(&self) -> u64 {
-        self.entries[0].get_index() + self.entries.len() as u64 - 1
+        self.entries[0].index + self.entries.len() as u64 - 1
     }
 
     /// Overwrites the contents of this Storage object with those of the given snapshot.
     pub fn apply_snapshot(&mut self, snapshot: Snapshot) -> Result<()> {
         // handle check for old snapshot being applied
-        let index = self.snapshot.get_metadata().get_index();
-        let snapshot_index = snapshot.get_metadata().get_index();
+        let index = self.snapshot.metadata.index;
+        let snapshot_index = snapshot.metadata.index;
         if index >= snapshot_index {
             return Err(Error::Store(StorageError::SnapshotOutOfDate));
         }
 
         let mut e = Entry::new();
-        e.set_term(snapshot.get_metadata().get_term());
-        e.set_index(snapshot.get_metadata().get_index());
+        e.term = snapshot.metadata.term;
+        e.index = snapshot.metadata.index;
         self.entries = vec![e];
         self.snapshot = snapshot;
         Ok(())
@@ -139,11 +139,11 @@ impl MemStorageCore {
         cs: Option<ConfState>,
         data: Vec<u8>,
     ) -> Result<&Snapshot> {
-        if idx <= self.snapshot.get_metadata().get_index() {
+        if idx <= self.snapshot.metadata.index {
             return Err(Error::Store(StorageError::SnapshotOutOfDate));
         }
 
-        let offset = self.entries[0].get_index();
+        let offset = self.entries[0].index;
         if idx > self.inner_last_index() {
             panic!(
                 "snapshot {} is out of bound lastindex({})",
@@ -151,14 +151,14 @@ impl MemStorageCore {
                 self.inner_last_index()
             )
         }
-        self.snapshot.mut_metadata().set_index(idx);
+        self.snapshot.metadata.index = idx;
         self.snapshot
-            .mut_metadata()
-            .set_term(self.entries[(idx - offset) as usize].get_term());
+            .metadata
+            .term = self.entries[(idx - offset) as usize].term;
         if let Some(cs) = cs {
-            self.snapshot.mut_metadata().set_conf_state(cs)
+            self.snapshot.metadata.conf_state = cs
         }
-        self.snapshot.set_data(data);
+        self.snapshot.data = data;
         Ok(&self.snapshot)
     }
 
@@ -166,7 +166,7 @@ impl MemStorageCore {
     /// It is the application's responsibility to not attempt to compact an index
     /// greater than RaftLog.applied.
     pub fn compact(&mut self, compact_index: u64) -> Result<()> {
-        let offset = self.entries[0].get_index();
+        let offset = self.entries[0].index;
         if compact_index <= offset {
             return Err(Error::Store(StorageError::Compacted));
         }
@@ -186,26 +186,26 @@ impl MemStorageCore {
 
     /// Append the new entries to storage.
     /// TODO: ensure the entries are continuous and
-    /// entries[0].get_index() > self.entries[0].get_index()
+    /// entries[0].index > self.entries[0].index
     pub fn append(&mut self, ents: &[Entry]) -> Result<()> {
         if ents.is_empty() {
             return Ok(());
         }
-        let first = self.entries[0].get_index() + 1;
-        let last = ents[0].get_index() + ents.len() as u64 - 1;
+        let first = self.entries[0].index + 1;
+        let last = ents[0].index + ents.len() as u64 - 1;
 
         if last < first {
             return Ok(());
         }
         // truncate compacted entries
-        let te: &[Entry] = if first > ents[0].get_index() {
-            let start_ent = (first - ents[0].get_index()) as usize;
+        let te: &[Entry] = if first > ents[0].index {
+            let start_ent = (first - ents[0].index) as usize;
             &ents[start_ent..]
         } else {
             ents
         };
 
-        let offset = te[0].get_index() - self.entries[0].get_index();
+        let offset = te[0].index - self.entries[0].index;
         if self.entries.len() as u64 > offset {
             let mut new_entries: Vec<Entry> = vec![];
             new_entries.extend_from_slice(&self.entries[..offset as usize]);
@@ -217,7 +217,7 @@ impl MemStorageCore {
             panic!(
                 "missing log entry [last: {}, append at: {}]",
                 self.inner_last_index(),
-                te[0].get_index()
+                te[0].index
             )
         }
 
@@ -259,14 +259,14 @@ impl Storage for MemStorage {
         let core = self.rl();
         Ok(RaftState {
             hard_state: core.hard_state.clone(),
-            conf_state: core.snapshot.get_metadata().get_conf_state().clone(),
+            conf_state: core.snapshot.metadata.conf_state.clone(),
         })
     }
 
     /// Implements the Storage trait.
     fn entries(&self, low: u64, high: u64, max_size: u64) -> Result<Vec<Entry>> {
         let core = self.rl();
-        let offset = core.entries[0].get_index();
+        let offset = core.entries[0].index;
         if low <= offset {
             return Err(Error::Store(StorageError::Compacted));
         }
@@ -289,20 +289,20 @@ impl Storage for MemStorage {
     /// Implements the Storage trait.
     fn term(&self, idx: u64) -> Result<u64> {
         let core = self.rl();
-        let offset = core.entries[0].get_index();
+        let offset = core.entries[0].index;
         if idx < offset {
             return Err(Error::Store(StorageError::Compacted));
         }
         if idx - offset >= core.entries.len() as u64 {
             return Err(Error::Store(StorageError::Unavailable));
         }
-        Ok(core.entries[(idx - offset) as usize].get_term())
+        Ok(core.entries[(idx - offset) as usize].term)
     }
 
     /// Implements the Storage trait.
     fn first_index(&self) -> Result<u64> {
         let core = self.rl();
-        Ok(core.entries[0].get_index() + 1)
+        Ok(core.entries[0].index + 1)
     }
 
     /// Implements the Storage trait.
@@ -320,8 +320,8 @@ impl Storage for MemStorage {
 
 #[cfg(test)]
 mod test {
+    use serde::Serialize;
     use internals::{ConfState, Entry, Snapshot};
-    use protobuf;
 
     use errors::{Error as RaftError, StorageError};
     use setup_for_test;
@@ -331,21 +331,21 @@ mod test {
 
     fn new_entry(index: u64, term: u64) -> Entry {
         let mut e = Entry::new();
-        e.set_term(term);
-        e.set_index(index);
+        e.term = term;
+        e.index = index;
         e
     }
 
-    fn size_of<T: protobuf::Message>(m: &T) -> u32 {
-        m.compute_size()
+    fn size_of<T: Serialize>(m: &T) -> u64 {
+        bincode::serialized_size(m).unwrap()
     }
 
     fn new_snapshot(index: u64, term: u64, nodes: Vec<u64>, data: Vec<u8>) -> Snapshot {
         let mut s = Snapshot::new();
-        s.mut_metadata().set_index(index);
-        s.mut_metadata().set_term(term);
-        s.mut_metadata().mut_conf_state().set_nodes(nodes);
-        s.set_data(data);
+        s.metadata.index = index;
+        s.metadata.term = term;
+        s.metadata.conf_state.nodes = nodes;
+        s.data = data;
         s
     }
 
@@ -505,11 +505,11 @@ mod test {
             if result != wresult {
                 panic!("#{}: want {:?}, got {:?}", i, wresult, result);
             }
-            let index = storage.wl().entries[0].get_index();
+            let index = storage.wl().entries[0].index;
             if index != windex {
                 panic!("#{}: want {}, index {}", i, windex, index);
             }
-            let term = storage.wl().entries[0].get_term();
+            let term = storage.wl().entries[0].term;
             if term != wterm {
                 panic!("#{}: want {}, term {}", i, wterm, term);
             }
@@ -526,7 +526,7 @@ mod test {
         let ents = vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5)];
         let nodes = vec![1, 2, 3];
         let mut cs = ConfState::new();
-        cs.set_nodes(nodes.clone());
+        cs.nodes = nodes.clone();
         let data = b"data".to_vec();
 
         let mut tests = vec![
